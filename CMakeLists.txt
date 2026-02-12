@@ -13,16 +13,21 @@ if (MSVC)
     add_compile_options("$<$<COMPILE_LANGUAGE:C>:/D_CRT_SECURE_NO_WARNINGS>")
     add_compile_options("$<$<COMPILE_LANGUAGE:C>:/wd4996>")
     add_compile_options("$<$<COMPILE_LANGUAGE:C>:/wd4722>")
+    add_compile_options("$<$<COMPILE_LANGUAGE:C>:/W0>")
     add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:/utf-8>")
     add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:/bigobj>")
     add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:/D_CRT_SECURE_NO_WARNINGS>")
     add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:/wd4996>")
     add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:/wd4722>")
     add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:/MP>")
+    # Hide all warnings for 3rd party code
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:/W0>")
+else()
+    add_compile_options(-w)
 endif ()
 
 if (NOT MSVC)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -Wall")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s")
 endif ()
 
 if (NOT CMAKE_BUILD_TYPE)
@@ -131,14 +136,16 @@ set(core_files src/backend.cpp
     models/zhinao.cpp
     )
 
-add_library(libchatllm SHARED EXCLUDE_FROM_ALL src/main.cpp ${core_files})
-target_link_libraries(libchatllm PRIVATE ggml)
-target_compile_definitions(libchatllm PUBLIC CHATLLM_SHARED_LIB)
+add_library(libchatllm SHARED src/main.cpp ${core_files})
+target_include_directories(libchatllm PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(libchatllm PUBLIC ggml)
+target_compile_definitions(libchatllm PRIVATE CHATLLM_SHARED_LIB)
 SET_TARGET_PROPERTIES(libchatllm PROPERTIES PREFIX "")
 set_target_properties(libchatllm
   PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY "../bindings"
 )
 
-add_executable(main src/main.cpp ${core_files})
-target_link_libraries(main PRIVATE ggml)
+add_executable(main src/main.cpp)
+target_link_libraries(main PUBLIC libchatllm)
+target_link_libraries(main PUBLIC ggml)

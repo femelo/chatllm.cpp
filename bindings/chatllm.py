@@ -1,18 +1,29 @@
-from ctypes import *
-from enum import IntEnum
-import os, sys, signal, queue
+import sys
+import ctypes
+from ctypes import c_void_p, c_int, c_char_p, cdll
+if sys.platform == 'win32':
+    from ctypes import WINFUNCTYPE, windll
+else:
+    from ctypes import CFUNCTYPE
+from enum import Enum
+import os
+import signal
+import queue
 import threading
-import json, base64
+import json
+import base64
+import errno
 from typing import Any, Iterable, List, Union
 
 try:
     import model_downloader
-except:
+except ImportError:
     this_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
     sys.path.append(os.path.join(this_dir, '..', 'scripts'))
     import model_downloader
 
-class PrintType(IntEnum):
+
+class PrintType(Enum):
     PRINT_CHAT_CHUNK        = 0,
     PRINTLN_META            = 1,    # print a whole line: general information
     PRINTLN_ERROR           = 2,    # print a whole line: error message
@@ -37,9 +48,11 @@ class PrintType(IntEnum):
     PRINT_EVT_ASYNC_COMPLETED       = 100,   # last async operation completed (utf8_str is null)
     PRINT_EVT_THOUGHT_COMPLETED     = 101,   # thought completed
 
-class EmbeddingPurpose(IntEnum):
+
+class EmbeddingPurpose(Enum):
     Document = 0,                   # for document
     Query    = 1,                   # for query
+
 
 def dll_name(lib: str) -> str:
     if sys.platform == 'win32':
@@ -49,10 +62,8 @@ def dll_name(lib: str) -> str:
     else:
         return lib + '.so'
 
-class LibChatLLM:
 
-    _obj2id = {}
-    _id2obj = {}
+class LibChatLLM:
 
     def __init__(self, lib: str = '', model_storage: str = '', init_params: list[str] = []) -> None:
 
@@ -73,8 +84,6 @@ class LibChatLLM:
             for path in os.getenv('PATH').split(';'):
                 if re.match(r'.+\\CUDA\\v[0-9]+\.[0-9]+\\bin', path) is not None:
                     os.add_dll_directory(path)
-
-        if sys.platform == 'win32':
             self._lib = windll.LoadLibrary(lib)
             self._PRINTFUNC = WINFUNCTYPE(None, c_void_p, c_int, c_char_p)
             self._ENDFUNC = WINFUNCTYPE(None, c_void_p)
@@ -197,7 +206,7 @@ class LibChatLLM:
 
     @staticmethod
     def callback_print(user_data: int, print_type: c_int, s: bytes) -> None:
-        obj = LibChatLLM._id2obj[user_data]
+        obj = ctypes.cast(user_data, ctypes.py_object).value
 
         if print_type == PrintType.PRINT_EVT_ASYNC_COMPLETED.value:
             obj.callback_async_done()
@@ -241,21 +250,15 @@ class LibChatLLM:
 
     @staticmethod
     def callback_end(user_data: int) -> None:
-        obj = LibChatLLM._id2obj[user_data]
+        obj = ctypes.cast(user_data, ctypes.py_object).value
         obj.callback_end()
 
     def alloc_id_for_obj(self, obj: Any) -> int:
-        if obj in LibChatLLM._obj2id:
-            return LibChatLLM._obj2id[obj]
-        id = len(LibChatLLM._obj2id) + 1
-        LibChatLLM._obj2id[obj] = id
-        LibChatLLM._id2obj[id] = obj
-        return id
+        return id(obj)
 
     def append_param(self, obj: c_void_p, param: Union[str, List[str]]) -> None:
         if isinstance(param, str):
             param = [param]
-            return
 
         param = model_downloader.preprocess_args(param, self.model_storage)
         for s in param:
@@ -268,11 +271,11 @@ class LibChatLLM:
     def set_ai_prefix(self, obj: c_void_p, prefix: str) -> int:
         return self._chatllm_set_ai_prefix(obj, c_char_p(prefix.encode()))
 
-    def _input_multimedia_msg(self, obj: c_void_p, user_input: List[dict | str]) -> int:
+    def _input_multimedia_msg(self, obj: c_void_p, user_input: List[dict | str]) -> int | None:
         self._chatllm_multimedia_msg_prepare(obj)
         for x in user_input:
             if isinstance(x, str):
-                self._chatllm_multimedia_msg_append(obj, c_char_p('text'), c_char_p(x))
+                self._chatllm_multimedia_msg_append(obj, c_char_p(b'text'), c_char_p(x.encode()))
             elif isinstance(x, dict):
                 t = x['type']
                 if t == 'text':
@@ -300,7 +303,7 @@ class LibChatLLM:
             self._input_multimedia_msg(obj, user_input)
             return self._chatllm_user_input_multimedia_msg(obj)
 
-    def async_chat(self, obj: c_void_p, user_input: str | List[dict | str]) -> int:
+    def async_chat(self, obj: c_void_p, user_input: str | List[dict | str]) -> int | None:
         if isinstance(user_input, str):
             return self._chatllm_async_user_input(obj, c_char_p(user_input.encode()))
         else:
@@ -325,11 +328,11 @@ class LibChatLLM:
     def tool_completion(self, obj: c_void_p, user_input: str) -> int:
         return self._chatllm_tool_completion(obj, c_char_p(user_input.encode()))
 
-    def text_tokenize(self, obj: c_void_p, text: str) -> str:
+    def text_tokenize(self, obj: c_void_p, text: str) -> int:
         return self._chatllm_text_tokenize(obj, c_char_p(text.encode()))
 
     def embedding(self, obj: c_void_p, text: str, purpose: EmbeddingPurpose = EmbeddingPurpose.Document) -> str:
-        return self._chatllm_text_embedding(obj, c_char_p(text.encode()), c_int(purpose.value))
+        return self._chatllm_text_embedding(obj, c_char_p(text.encode()), c_int(purpose.value))  # type: ignore
 
     def qa_rank(self, obj: c_void_p, q: str, a: str) -> float:
         return self._chatllm_qa_rank(obj, c_char_p(q.encode()), c_char_p(a.encode()))
@@ -377,16 +380,21 @@ class LLMChatMeta:
 def is_same_command_option(a: str, b: Union[str, list[str]]) -> bool:
     if isinstance(b, list):
         for s in b:
-            if is_same_command_option(a, s): return True
+            if is_same_command_option(a, s):
+                return True
         return False
 
-    if len(a) != len(b): return False
+    if len(a) != len(b):
+        return False
     for i in range(len(a)):
         c1 = a[i]
         c2 = b[i]
-        if c1 == '-': c1 = '_'
-        if c2 == '-': c2 = '_'
-        if c1 != c2: return False
+        if c1 == '-':
+            c1 = '_'
+        if c2 == '-':
+            c2 = '_'
+        if c1 != c2:
+            return False
     return True
 
 class FrontendOptions:
@@ -399,7 +407,8 @@ class FrontendOptions:
         self.prompt = ""
         self.sys_prompt = ""
 
-        if param is None: return
+        if param is None:
+            return
         if isinstance(param, str):
             param = [param]
 
@@ -418,10 +427,12 @@ class FrontendOptions:
                 self.single_turn = True
             elif is_same_command_option(s, ["-p", "--prompt"]):
                 i += 1
-                if i < len(param): self.prompt = param[i]
+                if i < len(param):
+                    self.prompt = param[i]
             elif is_same_command_option(s, ["-s", "--system"]):
                 i += 1
-                if i < len(param): self.sys_prompt = param[i]
+                if i < len(param):
+                    self.sys_prompt = param[i]
             i += 1
 
 class ChatLLM:
@@ -429,7 +440,7 @@ class ChatLLM:
         self._lib = lib
         self._chat = lib._chatllm_create()
         self.is_generating = False
-        self.out_queue = None
+        self.out_queue: queue.Queue | None = None
         self.input_id = None
         self.tool_input_id = None
         self.references = []
@@ -454,6 +465,8 @@ class ChatLLM:
 
     def start(self) -> None:
         r = self._lib.start(self._chat, self)
+        if r == errno.ECANCELED:  # help
+            sys.exit(0)
         if r != 0:
             raise Exception(f'ChatLLM: failed to `start()` with error code {r}')
 
@@ -487,7 +500,7 @@ class ChatLLM:
         if r != 0:
             raise Exception(f'ChatLLM: failed to `async_chat()` with error code {r}')
 
-    def ai_continue(self, suffix: str) -> int:
+    def ai_continue(self, suffix: str) -> int | None:
         self.is_generating = True
         r = self._lib.ai_continue(self._chat, suffix)
         self.is_generating = False
@@ -507,7 +520,7 @@ class ChatLLM:
         if r != 0:
             raise Exception(f'ChatLLM: failed to `tool_completion()` with error code {r}')
 
-    def async_ai_continue(self, suffix: str) -> int:
+    def async_ai_continue(self, suffix: str) -> int | None:
         self.is_generating = True
         r = self._lib.async_ai_continue(self._chat, suffix)
         if r != 0:
@@ -569,8 +582,8 @@ class ChatLLM:
         print(s)
 
     def callback_print_beam_search(self, s: str) -> None:
-        l = s.split(',', maxsplit=1)
-        self.beam_search_results.append({'str': l[1], 'score': float(l[0])})
+        _l = s.split(',', maxsplit=1)
+        self.beam_search_results.append({'str': _l[1], 'score': float(_l[0])})
 
     def callback_print_rewritten_query(self, s: str) -> None:
         self.rewritten_query = s
@@ -707,15 +720,19 @@ class ChatLLMStreamer:
     def terminate(self) -> None:
         self.run = False
 
-llm: ChatLLM = None
 
-def handler(signal_received, frame):
+llm: ChatLLM | None = None
+
+def handler(_signal_received: Any, _frame: Any) -> None:
+    if llm is None:
+        return
     if llm.is_generating:
         print('\naborting...')
         llm.abort()
     else:
         llm.show_statistics()
         sys.exit(0)
+
 
 def demo_streamer():
     global llm
@@ -730,7 +747,8 @@ def demo_streamer():
         for s in streamer.chat(s):
             print(s, end='', flush=True)
 
-def demo_embedding(params, cls = ChatLLM, lib_path: str =''):
+
+def demo_embedding(params, cls = ChatLLM, lib_path: str = '') -> None:
     global llm
     signal.signal(signal.SIGINT, handler)
     llm = cls(LibChatLLM(lib_path), params)
@@ -740,7 +758,8 @@ def demo_embedding(params, cls = ChatLLM, lib_path: str =''):
         print('Embedding > ', flush=True)
         print(llm.embedding(s))
 
-def demo_ranking(params, cls = ChatLLM, lib_path: str =''):
+
+def demo_ranking(params, cls = ChatLLM, lib_path: str = '') -> None:
     global llm
     signal.signal(signal.SIGINT, handler)
     llm = cls(LibChatLLM(lib_path), params)
@@ -749,6 +768,7 @@ def demo_ranking(params, cls = ChatLLM, lib_path: str =''):
         q = input('Question > ')
         a = input('Answer   > ')
         print(f'Score    > {llm.qa_rank(q, a)}', flush=True)
+
 
 def demo_simple(params, cls = ChatLLM, lib_path: str =''):
     global llm
@@ -761,6 +781,7 @@ def demo_simple(params, cls = ChatLLM, lib_path: str =''):
         llm.chat(s)
         if len(llm.references) > 0:
             print(llm.references)
+
 
 if __name__ == '__main__':
     demo_simple(sys.argv[1:])

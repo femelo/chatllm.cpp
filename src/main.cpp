@@ -1424,7 +1424,7 @@ static int chatllm_do_init(const std::vector<std::string> *p_obj_params = nullpt
     // it's ok to call this multiple times
     ggml_log_set(_ggml_log_callback, nullptr);
 
-    if (p_obj_params && (init_params.size() == 0))
+    if (p_obj_params != NULL && (init_params.size() == 0))
     {
         auto count = parse_args(init_args, *p_obj_params);
         if (count < p_obj_params->size())
@@ -1457,7 +1457,7 @@ public:
         sess_n_past(-1), sess_hist_len(-1), is_rag(false),
         is_async_busy(false), async_result_int(0)
     {
-        append_param("...");
+        append_param("chatllm");
     }
 
     void append_param(const char *utf8_str)
@@ -1708,6 +1708,12 @@ int chatllm_start(struct chatllm_obj *obj, f_chatllm_print f_print, f_chatllm_en
     if (r != 0) return r;
 
     auto count = parse_args(args, chat->params);
+
+    if (args.show_help)
+    {
+        usage(chat->params[0]);
+        return ECANCELED;  // ECANCELED
+    }
 
     if (count < chat->params.size())
         return (int)count;
