@@ -13,7 +13,7 @@ import threading
 import json
 import base64
 import errno
-from typing import Any, Iterable, List, Union
+from typing import Any, Iterable, List, Union, cast
 
 try:
     import model_downloader
@@ -213,37 +213,37 @@ class LibChatLLM:
             return
 
         txt = s.decode()
-        if print_type == PrintType.PRINT_CHAT_CHUNK.value:
+        if print_type == PrintType.PRINT_CHAT_CHUNK.value[0]:
             obj.callback_print(txt)
-        elif print_type == PrintType.PRINT_THOUGHT_CHUNK.value:
+        elif print_type == PrintType.PRINT_THOUGHT_CHUNK.value[0]:
             obj.callback_print_thought(txt)
-        elif print_type == PrintType.PRINTLN_META.value:
+        elif print_type == PrintType.PRINTLN_META.value[0]:
             obj.callback_print_meta(txt)
-        elif print_type == PrintType.PRINTLN_REF.value:
+        elif print_type == PrintType.PRINTLN_REF.value[0]:
             obj.callback_print_reference(txt)
-        elif print_type == PrintType.PRINTLN_REWRITTEN_QUERY.value:
+        elif print_type == PrintType.PRINTLN_REWRITTEN_QUERY.value[0]:
             obj.callback_print_rewritten_query(txt)
-        elif print_type == PrintType.PRINTLN_HISTORY_USER.value:
+        elif print_type == PrintType.PRINTLN_HISTORY_USER.value[0]:
             obj.callback_print_history_user(txt)
-        elif print_type == PrintType.PRINTLN_HISTORY_AI.value:
+        elif print_type == PrintType.PRINTLN_HISTORY_AI.value[0]:
             obj.callback_print_history_ai(txt)
-        elif print_type == PrintType.PRINTLN_TOOL_CALLING.value:
+        elif print_type == PrintType.PRINTLN_TOOL_CALLING.value[0]:
             obj.call_tool(txt)
-        elif print_type == PrintType.PRINTLN_EMBEDDING.value:
+        elif print_type == PrintType.PRINTLN_EMBEDDING.value[0]:
             obj.callback_print_embedding(txt)
-        elif print_type == PrintType.PRINTLN_RANKING.value:
+        elif print_type == PrintType.PRINTLN_RANKING.value[0]:
             obj.callback_print_ranking(txt)
-        elif print_type == PrintType.PRINTLN_TOKEN_IDS.value:
+        elif print_type == PrintType.PRINTLN_TOKEN_IDS.value[0]:
             obj.callback_text_tokenize(txt)
-        elif print_type == PrintType.PRINTLN_ERROR.value:
+        elif print_type == PrintType.PRINTLN_ERROR.value[0]:
             raise Exception(txt)
-        elif print_type == PrintType.PRINTLN_LOGGING.value:
+        elif print_type == PrintType.PRINTLN_LOGGING.value[0]:
             obj.callback_print_log(txt)
-        elif print_type == PrintType.PRINTLN_BEAM_SEARCH.value:
+        elif print_type == PrintType.PRINTLN_BEAM_SEARCH.value[0]:
             obj.callback_print_beam_search(txt)
-        elif print_type == PrintType.PRINT_EVT_ASYNC_COMPLETED.value:
+        elif print_type == PrintType.PRINT_EVT_ASYNC_COMPLETED.value[0]:
             obj.callback_async_done()
-        elif print_type == PrintType.PRINTLN_MODEL_INFO.value:
+        elif print_type == PrintType.PRINTLN_MODEL_INFO.value[0]:
             obj._model_info = json.loads(txt)
         else:
             raise Exception(f"unhandled print_type({print_type}): {txt}")
